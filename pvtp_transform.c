@@ -63,6 +63,7 @@ void transform_vtp(char *filename) {
   int numpoints = 0;
   int radius_header_line_added = 0;
   int data_offset = 0;
+  int color_start_offset, color_end_offset;
   while (1) {
     size_t read;
     getline(&line, &read, file);
@@ -80,7 +81,9 @@ void transform_vtp(char *filename) {
       }
       if (strstr(line, "color")) {
 	fprintf(bv_file_vtp,"<DataArray type=\"Float64\" Name=\"color\" format=\"appended\" offset=\"%d\"/>\n",data_offset);
+	color_start_offset = 1 + data_offset - 8*numpoints - 4; /* the offset in the source file where color data starts */
 	data_offset += 8*numpoints+4;
+	color_end_offset = 1 + data_offset - 8*numpoints - 4;
       } else if (strstr(line, "scale")) {
 	fprintf(bv_file_vtp,"<DataArray type=\"Float64\" Name=\"scale\" NumberOfComponents=\"3\" format=\"appended\" offset=\"%d\"/>\n", data_offset);
 	data_offset += 24*numpoints+4;
@@ -102,8 +105,31 @@ void transform_vtp(char *filename) {
 	double one = 1.0;
 	fwrite(&one,8,1,bv_file_vtp);
       }
+      continue;
     }
-    else putc(c,bv_file_vtp);
-    if (!(++char_count&0xffff))fprintf(stderr, "%d chars read\n",char_count);
+    if (char_count == color_start_offset) {
+      uint32_t header;
+      ungetc(c,file);
+      fread(&header,4,1,file); char_count+=4;
+      fwrite(&header,4,1,bv_file_vtp);
+      int byte_count = 0;
+      while (char_count < color_end_offset) {
+	/*double color;
+	fread(&color,8,1,file); char_count += 8;
+	color*=4;
+	fwrite(&color,8,1,bv_file_vtp);
+	printf("%g\n", color);*/
+	byte_count++;
+	c = getc(file);
+	if (byte_count == 6) c += 32;
+	putc(c, bv_file_vtp);
+	byte_count = byte_count % 8;
+	char_count++;
+      }
+    } else {
+      putc(c,bv_file_vtp);
+      char_count++;
+    }
+    if (!(char_count&0xffff))fprintf(stderr, "%d chars read\n",char_count);
   }
 }
